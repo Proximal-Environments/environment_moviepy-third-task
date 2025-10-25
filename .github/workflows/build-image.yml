@@ -1,0 +1,97 @@
+name: Build Environment Image
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+env:
+  REGISTRY: us-west1-docker.pkg.dev/proximal-core-0/environments
+  # Enable Dagger Cloud integration
+  _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          
+      - name: Configure Docker to use gcloud credentials
+        run: |
+          gcloud auth configure-docker us-west1-docker.pkg.dev --quiet
+          
+      - name: Extract branch and commit info
+        id: vars
+        run: |
+          BRANCH=${GITHUB_REF#refs/heads/}
+          BRANCH_SAFE=$(echo $BRANCH | tr '/' '-')
+          COMMIT_SHORT=${GITHUB_SHA:0:7}
+          
+          echo "branch=$BRANCH_SAFE" >> $GITHUB_OUTPUT
+          echo "commit_short=$COMMIT_SHORT" >> $GITHUB_OUTPUT
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Dagger SDK
+        run: pip install dagger-io
+
+      - name: Build and push with Dagger
+        env:
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: ${{ secrets.DAGGER_CLOUD_TOKEN }}
+        run: |
+          python3 << 'PYTHON_SCRIPT'
+          import sys
+          import anyio
+          import dagger
+
+          async def build_and_push():
+              config = dagger.Config(log_output=sys.stdout)
+              async with dagger.Connection(config) as client:
+                  # Build from Dockerfile
+                  context = client.host().directory(".")
+                  container = context.docker_build()
+                  
+                  # Publish with all three tags
+                  repo_name = "${{ github.event.repository.name }}"
+                  registry = "${{ env.REGISTRY }}"
+                  branch = "${{ steps.vars.outputs.branch }}"
+                  commit_short = "${{ steps.vars.outputs.commit_short }}"
+                  commit_full = "${{ github.sha }}"
+                  
+                  branch_ref = await container.publish(f"{registry}/{repo_name}:{branch}")
+                  short_ref = await container.publish(f"{registry}/{repo_name}:{commit_short}")
+                  full_ref = await container.publish(f"{registry}/{repo_name}:{commit_full}")
+                  
+                  print(f"Published: {branch_ref}")
+                  print(f"Published: {short_ref}")
+                  print(f"Published: {full_ref}")
+
+          anyio.run(build_and_push)
+          PYTHON_SCRIPT
+            
+      - name: Output build info
+        run: |
+          echo "### Environment Image Built with Dagger 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** `${{ github.event.repository.name }}`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** `${{ steps.vars.outputs.branch }}`" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** `${{ steps.vars.outputs.commit_short }}` (full: `${{ github.sha }}`)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Images pushed:**" >> $GITHUB_STEP_SUMMARY
+          echo "- `${{ env.REGISTRY }}/${{ github.event.repository.name }}:${{ steps.vars.outputs.branch }}`" >> $GITHUB_STEP_SUMMARY
+          echo "- `${{ env.REGISTRY }}/${{ github.event.repository.name }}:${{ steps.vars.outputs.commit_short }}`" >> $GITHUB_STEP_SUMMARY
+          echo "- `${{ env.REGISTRY }}/${{ github.event.repository.name }}:${{ github.sha }}`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "View build traces at: https://dagger.cloud/" >> $GITHUB_STEP_SUMMARY
