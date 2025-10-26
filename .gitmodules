@@ -6,3 +6,7 @@
 	path = taskrunner
 	url = https://github.com/Proximal-Labs/taskrunner-mini.git
 	branch = main
+[submodule "base"]
+	path = packages/base
+	url = https://github.com/Proximal-Labs/base-package.git
+	branch = main
