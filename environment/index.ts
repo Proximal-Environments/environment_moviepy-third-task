@@ -41,7 +41,7 @@ class Environment implements EnvironmentDefinition {
   }
 
   async setupProblem(problemId: string): Promise<void> {
-    
+    execute("pip install -e .", { cwd: '/root/proximal/workspace' });
   }
 
   async runTests(problemId: string, logger: Logger): Promise<TestResult[]> {
