@@ -1,6 +1,6 @@
 [submodule "workspace"]
 	path = workspace
-	url = https://github.com/Proximal-Environments/moviepy_moviepy-first-task_workspace.git
+	url = https://github.com/Proximal-Environments/-github.com-Proximal-Environments-moviepy_moviepy-third-task_workspace.git
 	branch = main
 [submodule "taskrunner"]
 	path = taskrunner
